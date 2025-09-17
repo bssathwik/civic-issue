@@ -76,7 +76,7 @@ const HomePage: React.FC = () => {
       >
         <Container maxWidth="lg">
           <Grid container spacing={4} alignItems="center">
-            <Grid component="div" xs={12} md={6}>
+            <Grid item xs={12} md={6}>
               <Typography variant="h2" component="h1" gutterBottom fontWeight="bold">
                 Make Your City Better
               </Typography>
@@ -117,7 +117,7 @@ const HomePage: React.FC = () => {
                 </Button>
               </Box>
             </Grid>
-            <Grid component="div" xs={12} md={6}>
+            <Grid item xs={12} md={6}>
               <Box
                 sx={{
                   textAlign: 'center',
@@ -137,7 +137,7 @@ const HomePage: React.FC = () => {
       <Container maxWidth="lg" sx={{ py: 6 }}>
         <Grid container spacing={4}>
           {stats.map((stat, index) => (
-            <Grid component="div" xs={6} md={3} key={index}>
+            <Grid item xs={6} md={3} key={index}>
               <Paper elevation={2} sx={{ p: 3, textAlign: 'center' }}>
                 <Typography variant="h3" color="primary" fontWeight="bold">
                   {stat.value}
@@ -163,7 +163,7 @@ const HomePage: React.FC = () => {
           
           <Grid container spacing={4} sx={{ mt: 4 }}>
             {features.map((feature, index) => (
-              <Grid component="div" xs={12} md={4} key={index}>
+              <Grid item xs={12} md={4} key={index}>
                 <Card sx={{ height: '100%', textAlign: 'center' }}>
                   <CardContent sx={{ p: 3 }}>
                     <Avatar

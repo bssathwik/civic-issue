@@ -1,0 +1,33 @@
+[33mcommit ff2898df4f111f88d2452ccddf0e7fcf02d8e7b9[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Your Name <balabhadrasaisathwik@gmail.com>
+Date:   Tue Sep 16 23:42:33 2025 +0530
+
+    App working
+
+[33mcommit 373fa27bbc9510358d3f17337230599ed1f3cab5[m[33m ([m[1;31morigin/copilot/fix-c226b535-ac22-4eb7-8d95-ae1b41606e55[m[33m, [m[1;32mcopilot/fix-c226b535-ac22-4eb7-8d95-ae1b41606e55[m[33m)[m
+Author: copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>
+Date:   Tue Sep 16 13:10:34 2025 +0000
+
+    Complete civic issue platform implementation with React web app and mobile app structure
+    
+    Co-authored-by: bssathwik <148696990+bssathwik@users.noreply.github.com>
+
+[33mcommit ba846cd671fb2c5f749b17d48a777b37dfc6cac3[m
+Author: copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>
+Date:   Tue Sep 16 12:53:45 2025 +0000
+
+    Implement comprehensive backend API with Node.js, MongoDB models, and services
+    
+    Co-authored-by: bssathwik <148696990+bssathwik@users.noreply.github.com>
+
+[33mcommit b029aeb6d64dd0caf9fb0553ce05503bb88d57ab[m
+Author: copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>
+Date:   Tue Sep 16 12:26:55 2025 +0000
+
+    Initial plan
+
+[33mcommit 0690f9eaf0a097a301d6678d940fbe3790af5a12[m
+Author: BALABHADRA SAI SATHWIK <148696990+bssathwik@users.noreply.github.com>
+Date:   Tue Sep 16 17:56:51 2025 +0530
+
+    Initial commit
