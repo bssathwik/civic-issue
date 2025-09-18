@@ -4,9 +4,9 @@ import {
   Container,
   Typography,
   Link,
-  Grid,
   Divider,
 } from '@mui/material';
+import Grid from '@mui/material/Grid';
 
 const Footer: React.FC = () => {
   return (
