@@ -1,0 +1,204 @@
+{
+  "info": {
+    "name": "Civic Issue App - Admin Management",
+    "description": "API collection for admin user management in Civic Issue App",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{admin_jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "admin_jwt_token",
+      "value": "your_admin_jwt_token_here",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Create Basic Admin",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Basic Administrator\",\n  \"email\": \"basic.admin@civic.com\",\n  \"password\": \"BasicAdmin123\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/admin/create",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "create"]
+        }
+      }
+    },
+    {
+      "name": "Create Complete Admin",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Complete Administrator\",\n  \"email\": \"complete.admin@civic.com\",\n  \"password\": \"CompleteAdmin123\",\n  \"phone\": \"+1234567890\",\n  \"role\": \"admin\",\n  \"location\": {\n    \"type\": \"Point\",\n    \"coordinates\": [77.2090, 28.6139]\n  },\n  \"address\": \"Complete Admin Office, Delhi, India\",\n  \"preferences\": {\n    \"notifications\": {\n      \"email\": true,\n      \"push\": true,\n      \"sms\": true\n    },\n    \"language\": \"en\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/admin/create",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "create"]
+        }
+      }
+    },
+    {
+      "name": "Create Field Worker",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Field Worker User\",\n  \"email\": \"fieldworker@civic.com\",\n  \"password\": \"FieldWorker123\",\n  \"phone\": \"+9876543210\",\n  \"role\": \"field_worker\",\n  \"location\": {\n    \"type\": \"Point\",\n    \"coordinates\": [77.1025, 28.7041]\n  },\n  \"address\": \"Field Office, Gurgaon, India\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/admin/create",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "create"]
+        }
+      }
+    },
+    {
+      "name": "Get All Admins",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/api/admin?page=1&limit=10&role=all&status=all",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "role",
+              "value": "all"
+            },
+            {
+              "key": "status",
+              "value": "all"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Admin Statistics",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{base_url}}/api/admin/stats",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "stats"]
+        }
+      }
+    },
+    {
+      "name": "Update User Role",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"role\": \"field_worker\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/admin/{{user_id}}/role",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "{{user_id}}", "role"]
+        }
+      }
+    },
+    {
+      "name": "Deactivate Admin User",
+      "request": {
+        "method": "PUT",
+        "url": {
+          "raw": "{{base_url}}/api/admin/{{user_id}}/deactivate",
+          "host": ["{{base_url}}"],
+          "path": ["api", "admin", "{{user_id}}", "deactivate"]
+        }
+      }
+    },
+    {
+      "name": "Login Admin (Get JWT Token)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"admin@civic.com\",\n  \"password\": \"admin123\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/auth/login",
+          "host": ["{{base_url}}"],
+          "path": ["api", "auth", "login"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    const response = pm.response.json();",
+              "    if (response.success && response.token) {",
+              "        pm.collectionVariables.set('admin_jwt_token', response.token);",
+              "        console.log('JWT token saved to collection variable');",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    }
+  ]
+}

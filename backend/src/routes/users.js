@@ -6,6 +6,7 @@ const {
   markAllNotificationsRead,
   getLeaderboard,
   getGamificationStats,
+  getUserDashboardStats,
   searchUsers
 } = require('../controllers/userController');
 const { authenticate, authorize } = require('../middleware/auth');
@@ -25,6 +26,7 @@ router.get('/notifications', validatePagination, getUserNotifications);
 router.put('/notifications/:id/read', validateId, markNotificationRead);
 router.put('/notifications/read-all', markAllNotificationsRead);
 router.get('/gamification/stats', getGamificationStats);
+router.get('/dashboard/stats', getUserDashboardStats);
 
 // Admin routes
 router.get('/search', authorize('admin'), validatePagination, searchUsers);

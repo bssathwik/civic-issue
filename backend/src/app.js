@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
+// const rateLimit = require('express-rate-limit'); // DISABLED
 const path = require('path');
 require('dotenv').config();
 
@@ -16,6 +16,11 @@ const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./routes/auth');
 const issueRoutes = require('./routes/issues');
 const userRoutes = require('./routes/users');
+const adminRoutes = require('./routes/admin');
+const citizenRoutes = require('./routes/citizen');
+const gamificationRoutes = require('./routes/gamification');
+const notificationRoutes = require('./routes/notifications');
+const verificationRoutes = require('./routes/verification');
 
 const app = express();
 
@@ -31,23 +36,42 @@ app.use(helmet({
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://your-frontend-domain.com'] 
-    : ['http://localhost:3000', 'http://localhost:3001'],
-  credentials: true
+    : [
+        'http://localhost:3000', 
+        'http://localhost:3001',
+        'http://localhost:5000', // Admin dashboard
+        'http://localhost:19006', // Expo dev server
+        'http://localhost:19000', // Expo web
+        'http://10.207.93.220:3000', // Current network IP for mobile testing
+        'http://10.207.93.220:19006', // Current Expo dev server on network IP
+        'http://10.207.93.220:8081', // Current Expo dev server alternate port
+        'http://192.168.1.19:3000', // Previous network IP (keeping for compatibility)
+        'http://192.168.1.19:19006', // Previous Expo dev server on network IP
+      ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'app-version']
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
-  message: {
-    success: false,
-    message: 'Too many requests from this IP, please try again later'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
+// Custom request logging for debugging multiple requests
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} from ${req.ip}`);
+  next();
 });
 
-app.use('/api', limiter);
+// Rate limiting - DISABLED for development
+// const limiter = rateLimit({
+//   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
+//   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
+//   message: {
+//     success: false,
+//     message: 'Too many requests from this IP, please try again later'
+//   },
+//   standardHeaders: true,
+//   legacyHeaders: false,
+// });
+
+// app.use('/api', limiter); // DISABLED - No rate limiting
 
 // Logging
 if (process.env.NODE_ENV !== 'test') {
@@ -65,14 +89,21 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/api/auth', authRoutes);
 app.use('/api/issues', issueRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/citizen', citizenRoutes);
+app.use('/api/gamification', gamificationRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/verification', verificationRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
-    message: 'API is running',
+    message: 'Enhanced Civic API is running',
+    version: '2.0.0-citizen-enhanced',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV,
+    features: ['citizen-management', 'enhanced-registration', 'report-tracking']
   });
 });
 
@@ -100,7 +131,9 @@ app.get('/api', (req, res) => {
         'POST /api/issues': 'Create new issue',
         'PUT /api/issues/:id': 'Update issue',
         'DELETE /api/issues/:id': 'Delete issue',
-        'POST /api/issues/:id/vote': 'Vote on issue',
+        'POST /api/issues/:id/vote': 'Vote on issue (upvote/downvote)',
+        'POST /api/issues/:id/upvote': 'Upvote issue',
+        'POST /api/issues/:id/downvote': 'Downvote issue',
         'POST /api/issues/:id/comments': 'Add comment to issue',
         'GET /api/issues/stats': 'Get issue statistics'
       },
@@ -111,6 +144,7 @@ app.get('/api', (req, res) => {
         'PUT /api/users/notifications/read-all': 'Mark all notifications as read',
         'GET /api/users/leaderboard': 'Get gamification leaderboard',
         'GET /api/users/gamification/stats': 'Get user gamification stats',
+        'GET /api/users/dashboard/stats': 'Get user dashboard statistics',
         'GET /api/users/search': 'Search users (admin only)'
       }
     }
@@ -123,13 +157,35 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 
 // Start server
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
+  // Get network IP address
+  const os = require('os');
+  const networkInterfaces = os.networkInterfaces();
+  let networkIP = '10.207.93.220'; // Default to your current IP
+  
+  // Try to find the actual network IP
+  for (const interfaceName in networkInterfaces) {
+    const addresses = networkInterfaces[interfaceName];
+    for (const address of addresses) {
+      if (address.family === 'IPv4' && !address.internal && 
+          (address.address.startsWith('192.168.') || 
+           address.address.startsWith('10.207.') ||
+           address.address.startsWith('172.16.'))) {
+        networkIP = address.address;
+        break;
+      }
+    }
+  }
+  
   console.log(`
 🚀 Civic Issue Platform API Server
 🌍 Environment: ${process.env.NODE_ENV}
 📡 Server running on port ${PORT}
+🌐 Accessible on all network interfaces
 🔗 API Endpoints: http://localhost:${PORT}/api
 📊 Health Check: http://localhost:${PORT}/api/health
+🔗 External Access: http://${networkIP}:${PORT}/api
+📱 Mobile App Endpoint: http://${networkIP}:${PORT}/api
   `);
 });
 

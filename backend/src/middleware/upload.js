@@ -52,11 +52,14 @@ const processImage = async (buffer, filename, options = {}) => {
     const filepath = path.join(uploadDir, filename);
     await fs.writeFile(filepath, processedBuffer);
 
+    // Construct full URL for the image
+    const baseUrl = process.env.BASE_URL || 'http://10.207.93.220:3000';
+    
     return {
       filename,
       path: filepath,
       size: processedBuffer.length,
-      url: `/uploads/${filename}`
+      url: `${baseUrl}/uploads/${filename}`
     };
   } catch (error) {
     throw new Error(`Image processing failed: ${error.message}`);

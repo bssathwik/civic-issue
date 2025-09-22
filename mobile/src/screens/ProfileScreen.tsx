@@ -1,220 +1,608 @@
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useAuth } from '../context/AuthContext';
+import { DebugPanel } from '../components/DebugPanel';
+import { apiClient } from '../services/api';
 
-const ProfileScreen = () => {
+interface ProfileScreenProps {
+  navigation: any;
+}
+
+export default function ProfileScreen({ navigation }: ProfileScreenProps) {
+  const { logout, user } = useAuth();
+  
+  // State for dynamic data
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [gamificationStats, setGamificationStats] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch user statistics
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        const [dashboardResponse, gamificationResponse] = await Promise.all([
+          apiClient.getUserDashboardStats(),
+          apiClient.getGamificationStats()
+        ]);
+
+        if (dashboardResponse.success) {
+          setDashboardStats(dashboardResponse.stats);
+        }
+        
+        if (gamificationResponse.success) {
+          setGamificationStats(gamificationResponse.stats || gamificationResponse.data);
+        }
+        
+      } catch (error: any) {
+        console.error('Error fetching user data:', error);
+        setError(error.message || 'Failed to load profile data');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  const handleMenuPress = (item: string) => {
+    switch (item) {
+      case 'reports':
+        navigation.navigate('My Reports');
+        break;
+      case 'notifications':
+        // Navigate to the Notifications tab instead of trying to push a new screen
+        navigation.getParent()?.navigate('Notifications');
+        break;
+      case 'community':
+        navigation.navigate('CommunityVoting');
+        break;
+      case 'settings':
+        (navigation as any).navigate('Settings');
+        break;
+      case 'logout':
+        Alert.alert(
+          'Logout',
+          'Are you sure you want to logout?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Logout', 
+              style: 'destructive', 
+              onPress: async () => {
+                try {
+                  const result = await logout();
+                  if (result.success) {
+                    // Navigation will automatically happen via AuthContext
+                    console.log('Logout successful');
+                  }
+                } catch (error) {
+                  console.error('Logout error:', error);
+                  Alert.alert('Error', 'Failed to logout. Please try again.');
+                }
+              }
+            },
+          ]
+        );
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
+        <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('EditProfile')}>
+          <Ionicons name="create-outline" size={24} color="#fff" />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
-        {/* Profile Info */}
-        <View style={styles.profileInfo}>
-          <Image source={require('../assets/icon.png')} style={styles.avatar} />
-          <Text style={styles.name}>Sathwik!</Text>
-          <Text style={styles.subtitle}>Level 5 - Community Hero</Text>
-          <View style={styles.pointsContainer}>
-            <Text style={styles.points}>2750/3000 XP</Text>
-            <TouchableOpacity style={styles.shareButton}>
-              <Ionicons name="share-outline" size={16} color="#fff" />
-            </TouchableOpacity>
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollView}>
+        {/* Profile Section */}
+        <View style={styles.profileSection}>
+          <View style={styles.profileCard}>
+            <View style={styles.avatarContainer}>
+              <Image 
+                source={{ 
+                  uri: user?.avatar || 'https://via.placeholder.com/80'
+                }} 
+                style={styles.avatar} 
+              />
+              <TouchableOpacity style={styles.cameraButton}>
+                <Ionicons name="camera" size={16} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.userName}>{user?.name || 'Unknown User'}</Text>
+            <Text style={styles.email}>{user?.email || 'No email provided'}</Text>
+            
+            {isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#4FD1C7" />
+                <Text style={styles.loadingText}>Loading profile data...</Text>
+              </View>
+            ) : error ? (
+              <View style={styles.errorContainer}>
+                <Ionicons name="warning" size={16} color="#EF4444" />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.levelContainer}>
+                  <View style={styles.levelBadge}>
+                    <Ionicons name="trophy" size={16} color="#fff" />
+                    <Text style={styles.levelText}>
+                      Level {gamificationStats?.level || dashboardStats?.engagement?.level || 1} - {dashboardStats?.engagement?.badge || 'Newcomer'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* XP Progress Bar */}
+                <View style={styles.xpContainer}>
+                  <View style={styles.xpBar}>
+                    <View style={[
+                      styles.xpProgress, 
+                      { 
+                        width: `${Math.min((gamificationStats?.currentXP || 0) / (gamificationStats?.xpToNextLevel || 100) * 100, 100)}%`
+                      }
+                    ]} />
+                  </View>
+                  <Text style={styles.xpText}>
+                    {gamificationStats?.currentXP || 0} / {gamificationStats?.xpToNextLevel || 100} XP
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
 
-        {/* Gamification & Rewards */}
+        {/* Statistics Section */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statsCard}>
+            <Text style={styles.statsNumber}>
+              {isLoading ? '-' : (dashboardStats?.issues?.total || 0)}
+            </Text>
+            <Text style={styles.statsLabel}>Reports Filed</Text>
+          </View>
+          <View style={styles.statsCard}>
+            <Text style={styles.statsNumber}>
+              {isLoading ? '-' : (dashboardStats?.issues?.resolved || 0)}
+            </Text>
+            <Text style={styles.statsLabel}>Issues Resolved</Text>
+          </View>
+          <View style={styles.statsCard}>
+            <Text style={styles.statsNumber}>
+              {isLoading ? '-' : (dashboardStats?.engagement?.points || 0)}
+            </Text>
+            <Text style={styles.statsLabel}>Community Points</Text>
+          </View>
+        </View>
+
+        {/* Achievements Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Gamification & Rewards</Text>
-          <View style={styles.rewardsContainer}>
-            <View style={styles.rewardItem}>
-              <View style={styles.rewardIcon}>
-                <Ionicons name="trophy" size={24} color="#FFD700" />
+          <Text style={styles.sectionTitle}>Achievements</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.achievementsScroll}>
+            {isLoading ? (
+              <View style={styles.achievementItem}>
+                <View style={[styles.achievementIcon, { backgroundColor: '#E5E7EB' }]}>
+                  <ActivityIndicator size="small" color="#9CA3AF" />
+                </View>
+                <Text style={styles.achievementText}>Loading...</Text>
               </View>
-              <Text style={styles.rewardText}>Big Member{'\n'}Rewards</Text>
-            </View>
-            <View style={styles.rewardItem}>
-              <View style={styles.rewardIcon}>
-                <Ionicons name="trash" size={24} color="#666" />
+            ) : error ? (
+              <View style={styles.achievementItem}>
+                <View style={[styles.achievementIcon, { backgroundColor: '#FEF2F2' }]}>
+                  <Ionicons name="warning" size={24} color="#EF4444" />
+                </View>
+                <Text style={styles.achievementText}>Error loading</Text>
               </View>
-              <Text style={styles.rewardText}>Top Resolver{'\n'}Performance</Text>
-            </View>
-            <View style={styles.rewardItem}>
-              <View style={styles.rewardIcon}>
-                <Ionicons name="shield" size={24} color="#666" />
-              </View>
-              <Text style={styles.rewardText}>Protective</Text>
-            </View>
-            <View style={styles.rewardItem}>
-              <View style={styles.rewardIcon}>
-                <Ionicons name="star" size={24} color="#666" />
-              </View>
-              <Text style={styles.rewardText}>Popular</Text>
-            </View>
-          </View>
+            ) : (
+              <>
+                {/* Default/Demo Achievement based on reports */}
+                {(dashboardStats?.issues?.total || 0) > 0 && (
+                  <View style={styles.achievementItem}>
+                    <View style={[styles.achievementIcon, { backgroundColor: '#FFD700' }]}>
+                      <Ionicons name="star" size={24} color="#fff" />
+                    </View>
+                    <Text style={styles.achievementText}>Reporter</Text>
+                  </View>
+                )}
+                
+                {/* Achievement for resolved issues */}
+                {(dashboardStats?.issues?.resolved || 0) > 0 && (
+                  <View style={styles.achievementItem}>
+                    <View style={[styles.achievementIcon, { backgroundColor: '#4FD1C7' }]}>
+                      <Ionicons name="checkmark-circle" size={24} color="#fff" />
+                    </View>
+                    <Text style={styles.achievementText}>Problem Solver</Text>
+                  </View>
+                )}
+                
+                {/* Achievement for community engagement */}
+                {(dashboardStats?.engagement?.points || 0) >= 100 && (
+                  <View style={styles.achievementItem}>
+                    <View style={[styles.achievementIcon, { backgroundColor: '#10B981' }]}>
+                      <Ionicons name="people" size={24} color="#fff" />
+                    </View>
+                    <Text style={styles.achievementText}>Community Helper</Text>
+                  </View>
+                )}
+                
+                {/* Achievement for high-level users */}
+                {(dashboardStats?.engagement?.level || 1) >= 5 && (
+                  <View style={styles.achievementItem}>
+                    <View style={[styles.achievementIcon, { backgroundColor: '#8B5CF6' }]}>
+                      <Ionicons name="shield-checkmark" size={24} color="#fff" />
+                    </View>
+                    <Text style={styles.achievementText}>Civic Guardian</Text>
+                  </View>
+                )}
+                
+                {/* Default if no achievements */}
+                {(dashboardStats?.issues?.total || 0) === 0 && 
+                 (dashboardStats?.engagement?.points || 0) === 0 && (
+                  <View style={styles.achievementItem}>
+                    <View style={[styles.achievementIcon, { backgroundColor: '#E5E7EB' }]}>
+                      <Ionicons name="trophy-outline" size={24} color="#9CA3AF" />
+                    </View>
+                    <Text style={styles.achievementText}>Getting Started</Text>
+                  </View>
+                )}
+              </>
+            )}
+          </ScrollView>
         </View>
 
-        {/* Menu Options */}
-        <View style={styles.menuContainer}>
-          <TouchableOpacity style={styles.menuItem}>
-            <Ionicons name="document-text-outline" size={20} color="#666" />
-            <Text style={styles.menuText}>My Reports</Text>
-            <Ionicons name="chevron-forward" size={20} color="#666" />
+        {/* Menu Section */}
+        <View style={styles.menuSection}>
+          <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuPress('reports')}>
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: '#4FD1C7' }]}>
+                <Ionicons name="document-text" size={20} color="#fff" />
+              </View>
+              <View>
+                <Text style={styles.menuTitle}>My Reports</Text>
+                <Text style={styles.menuSubtitle}>View all your submitted reports</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.menuItem}>
-            <Ionicons name="settings-outline" size={20} color="#666" />
-            <Text style={styles.menuText}>Account Settings</Text>
-            <Ionicons name="chevron-forward" size={20} color="#666" />
+
+          <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuPress('notifications')}>
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: '#F59E0B' }]}>
+                <Ionicons name="notifications" size={20} color="#fff" />
+              </View>
+              <View>
+                <Text style={styles.menuTitle}>Notifications</Text>
+                <Text style={styles.menuSubtitle}>Manage your preferences</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.menuItem}>
-            <Ionicons name="help-circle-outline" size={20} color="#666" />
-            <Text style={styles.menuText}>Help or Support</Text>
-            <Ionicons name="chevron-forward" size={20} color="#666" />
+
+          <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuPress('community')}>
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: '#3B82F6' }]}>
+                <Ionicons name="people" size={20} color="#fff" />
+              </View>
+              <View>
+                <Text style={styles.menuTitle}>Community Voting</Text>
+                <Text style={styles.menuSubtitle}>Vote on community issues</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuPress('settings')}>
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: '#8B5CF6' }]}>
+                <Ionicons name="settings" size={20} color="#fff" />
+              </View>
+              <View>
+                <Text style={styles.menuTitle}>Account Settings</Text>
+                <Text style={styles.menuSubtitle}>Privacy and security settings</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.menuItem} onPress={() => handleMenuPress('logout')}>
+            <View style={styles.menuItemLeft}>
+              <View style={[styles.menuIcon, { backgroundColor: '#EF4444' }]}>
+                <Ionicons name="log-out" size={20} color="#fff" />
+              </View>
+              <View>
+                <Text style={styles.menuTitle}>Logout</Text>
+                <Text style={styles.menuSubtitle}>Sign out of your account</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
           </TouchableOpacity>
         </View>
+
+        {/* Debug Panel for Development */}
+        <DebugPanel navigation={navigation} />
+
+        <View style={{ height: 80 }} />
       </ScrollView>
-
-      {/* Bottom Tab Navigation */}
-      <View style={styles.bottomTab}>
-        <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="home" size={24} color="#4ECDC4" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="search" size={24} color="#999" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="add-circle" size={24} color="#999" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="chatbubbles" size={24} color="#999" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem}>
-          <Ionicons name="person" size={24} color="#999" />
-        </TouchableOpacity>
-      </View>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#4ECDC4',
+    backgroundColor: '#F8FAFC',
   },
   header: {
-    backgroundColor: '#4ECDC4',
+    backgroundColor: '#4FD1C7',
     paddingTop: 50,
-    paddingBottom: 20,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    padding: 8,
+    marginRight: 8,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
+    flex: 1,
+    textAlign: 'center',
   },
-  profileInfo: {
-    backgroundColor: '#4ECDC4',
+  editButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  profileSection: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+  },
+  profileCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
     alignItems: 'center',
-    paddingBottom: 30,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 16,
   },
   avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    marginBottom: 10,
+    backgroundColor: '#E5E7EB',
   },
-  name: {
-    fontSize: 22,
+  cameraButton: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#4FD1C7',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  userName: {
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#1F2937',
+    marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#fff',
-    opacity: 0.9,
-    marginTop: 4,
+  email: {
+    fontSize: 16,
+    color: '#6B7280',
+    marginBottom: 16,
   },
-  pointsContainer: {
+  levelContainer: {
+    marginBottom: 16,
+  },
+  levelBadge: {
+    backgroundColor: '#4FD1C7',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 10,
   },
-  points: {
+  levelText: {
     fontSize: 14,
+    fontWeight: '600',
     color: '#fff',
-    marginRight: 10,
+    marginLeft: 6,
   },
-  shareButton: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 15,
-    padding: 8,
+  xpContainer: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  xpBar: {
+    width: '100%',
+    height: 8,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 4,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  xpProgress: {
+    height: '100%',
+    backgroundColor: '#4FD1C7',
+    borderRadius: 4,
+  },
+  xpText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    gap: 12,
+  },
+  statsCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  statsNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#4FD1C7',
+    marginBottom: 4,
+  },
+  statsLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    textAlign: 'center',
   },
   section: {
-    backgroundColor: '#fff',
-    padding: 20,
+    paddingHorizontal: 16,
+    paddingTop: 24,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 15,
+    color: '#1F2937',
+    marginBottom: 16,
   },
-  rewardsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  achievementsScroll: {
+    marginHorizontal: -16,
+    paddingHorizontal: 16,
   },
-  rewardItem: {
+  achievementItem: {
     alignItems: 'center',
-    flex: 1,
+    marginRight: 20,
+    width: 80,
   },
-  rewardIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#f5f5f5',
+  achievementIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
     marginBottom: 8,
   },
-  rewardText: {
-    fontSize: 10,
+  achievementText: {
+    fontSize: 12,
+    color: '#374151',
     textAlign: 'center',
-    color: '#666',
-    lineHeight: 12,
+    fontWeight: '500',
   },
-  menuContainer: {
-    backgroundColor: '#fff',
-    marginTop: 10,
+  menuSection: {
+    paddingHorizontal: 16,
+    paddingTop: 24,
   },
   menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  menuText: {
-    flex: 1,
-    marginLeft: 15,
-    fontSize: 16,
-    color: '#333',
-  },
-  bottomTab: {
-    flexDirection: 'row',
     backgroundColor: '#fff',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  tabItem: {
-    flex: 1,
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 5,
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  menuIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  menuTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 2,
+  },
+  menuSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginLeft: 8,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    marginVertical: 10,
+    paddingHorizontal: 12,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#EF4444',
+    marginLeft: 8,
   },
 });
-
-export default ProfileScreen;

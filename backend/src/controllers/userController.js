@@ -1,6 +1,6 @@
 const User = require('../models/User');
 const notificationService = require('../services/notificationService');
-const gamificationService = require('../services/gamificationService');
+const gamificationService = require('../services/GamificationService');
 
 // Get user profile by ID
 const getUserProfile = async (req, res) => {
@@ -210,6 +210,63 @@ const searchUsers = async (req, res) => {
   }
 };
 
+// Get user dashboard statistics
+const getUserDashboardStats = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const Issue = require('../models/Issue');
+
+    // Get user's issue statistics
+    const [totalIssues, resolvedIssues, inProgressIssues, pendingIssues] = await Promise.all([
+      Issue.countDocuments({ reportedBy: userId }),
+      Issue.countDocuments({ reportedBy: userId, status: 'resolved' }),
+      Issue.countDocuments({ reportedBy: userId, status: 'in_progress' }),
+      Issue.countDocuments({ reportedBy: userId, status: { $in: ['reported', 'in_review'] } })
+    ]);
+
+    // Get total votes received
+    const votesReceived = await Issue.aggregate([
+      { $match: { reportedBy: userId } },
+      {
+        $project: {
+          totalVotes: { $add: [{ $size: '$upvotes' }, { $size: '$downvotes' }] }
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$totalVotes' } } }
+    ]);
+
+    // Get gamification stats
+    const gamificationStats = await gamificationService.getUserStats(userId);
+
+    const stats = {
+      issues: {
+        total: totalIssues,
+        resolved: resolvedIssues,
+        inProgress: inProgressIssues,
+        pending: pendingIssues
+      },
+      engagement: {
+        totalVotes: votesReceived[0]?.total || 0,
+        points: gamificationStats?.totalPoints || 0,
+        level: gamificationStats?.level || 1,
+        badge: gamificationStats?.currentBadge || 'Newcomer'
+      }
+    };
+
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    console.error('Get user dashboard stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user dashboard statistics',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getUserProfile,
   getUserNotifications,
@@ -217,5 +274,6 @@ module.exports = {
   markAllNotificationsRead,
   getLeaderboard,
   getGamificationStats,
+  getUserDashboardStats,
   searchUsers
 };

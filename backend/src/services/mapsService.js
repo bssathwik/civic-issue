@@ -267,6 +267,93 @@ class MapsService {
       throw new Error(`Place details failed: ${error.message}`);
     }
   }
+
+  // Get location details including ward, zone, and administrative information
+  async getLocationDetails(lat, lng) {
+    try {
+      if (!this.apiKey || this.apiKey === 'development-key') {
+        // Return mock location details for development
+        return {
+          ward: 'Ward 12',
+          zone: 'Central Zone',
+          constituency: 'Central Constituency',
+          municipalArea: 'Municipal Corporation',
+          landmarks: ['City Hall', 'Central Park', 'Main Market'],
+          district: 'Central District',
+          state: 'State Name',
+          pincode: '123456'
+        };
+      }
+
+      // Use reverse geocoding to get detailed address components
+      const reverseResult = await this.reverseGeocode(lat, lng);
+      
+      // Extract administrative information from address components
+      const addressComponents = reverseResult.addressComponents || [];
+      
+      let ward = '';
+      let zone = '';
+      let constituency = '';
+      let municipalArea = '';
+      let district = '';
+      let state = '';
+      let pincode = '';
+
+      addressComponents.forEach(component => {
+        const types = component.types;
+        
+        if (types.includes('sublocality_level_1') || types.includes('sublocality')) {
+          ward = component.long_name;
+        }
+        if (types.includes('sublocality_level_2')) {
+          zone = component.long_name;
+        }
+        if (types.includes('administrative_area_level_3')) {
+          constituency = component.long_name;
+        }
+        if (types.includes('locality')) {
+          municipalArea = component.long_name;
+        }
+        if (types.includes('administrative_area_level_2')) {
+          district = component.long_name;
+        }
+        if (types.includes('administrative_area_level_1')) {
+          state = component.long_name;
+        }
+        if (types.includes('postal_code')) {
+          pincode = component.long_name;
+        }
+      });
+
+      // Find nearby landmarks
+      const nearbyPlaces = await this.findNearbyPlaces(lat, lng, 1000);
+      const landmarks = nearbyPlaces.slice(0, 5).map(place => place.name);
+
+      return {
+        ward: ward || 'Unknown Ward',
+        zone: zone || 'Unknown Zone',
+        constituency: constituency || 'Unknown Constituency',
+        municipalArea: municipalArea || 'Unknown Municipal Area',
+        landmarks: landmarks,
+        district: district || 'Unknown District',
+        state: state || 'Unknown State',
+        pincode: pincode || 'Unknown'
+      };
+    } catch (error) {
+      console.error('Location details error:', error);
+      // Return fallback data instead of throwing error to prevent issue creation failure
+      return {
+        ward: 'Unknown Ward',
+        zone: 'Unknown Zone',
+        constituency: 'Unknown Constituency',
+        municipalArea: 'Unknown Municipal Area',
+        landmarks: [],
+        district: 'Unknown District',
+        state: 'Unknown State',
+        pincode: 'Unknown'
+      };
+    }
+  }
 }
 
 module.exports = new MapsService();

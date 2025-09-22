@@ -48,6 +48,63 @@ const validateLogin = [
   checkValidation
 ];
 
+// Admin creation validation
+const validateAdminCreation = [
+  body('name')
+    .trim()
+    .notEmpty()
+    .withMessage('Name is required')
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Name must be between 2 and 50 characters'),
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one lowercase letter, one uppercase letter, and one number'),
+  body('phone')
+    .optional()
+    .isMobilePhone()
+    .withMessage('Please provide a valid phone number'),
+  body('role')
+    .optional()
+    .isIn(['admin', 'field_worker'])
+    .withMessage('Role must be either admin or field_worker'),
+  body('location.coordinates')
+    .optional()
+    .isArray({ min: 2, max: 2 })
+    .withMessage('Coordinates must be an array with exactly 2 elements'),
+  body('location.coordinates.*')
+    .optional()
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Coordinates must be valid longitude/latitude values'),
+  body('address')
+    .optional()
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage('Address must not exceed 200 characters'),
+  body('preferences.notifications.email')
+    .optional()
+    .isBoolean()
+    .withMessage('Email notification preference must be boolean'),
+  body('preferences.notifications.push')
+    .optional()
+    .isBoolean()
+    .withMessage('Push notification preference must be boolean'),
+  body('preferences.notifications.sms')
+    .optional()
+    .isBoolean()
+    .withMessage('SMS notification preference must be boolean'),
+  body('preferences.language')
+    .optional()
+    .isIn(['en', 'hi', 'es', 'fr', 'de'])
+    .withMessage('Language must be a supported language code'),
+  checkValidation
+];
+
 // Issue validation rules
 const validateCreateIssue = [
   body('title')
@@ -77,6 +134,9 @@ const validateCreateIssue = [
       'safety_security',
       'noise_pollution',
       'air_pollution',
+      'electricity',
+      'sewerage',
+      'construction',
       'other'
     ])
     .withMessage('Please select a valid category'),
@@ -183,6 +243,7 @@ const validatePagination = [
 module.exports = {
   validateRegister,
   validateLogin,
+  validateAdminCreation,
   validateCreateIssue,
   validateUpdateIssue,
   validateComment,

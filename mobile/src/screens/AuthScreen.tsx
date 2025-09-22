@@ -28,6 +28,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
     password: '',
     role: '',
   });
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleInputChange = (field: keyof FormData, value: string) => {
     setFormData({ ...formData, [field]: value });
@@ -83,13 +84,18 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ navigation }) => {
         onChangeText={(value) => handleInputChange('email', value)}
       />
 
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        secureTextEntry
-        value={formData.password}
-        onChangeText={(value) => handleInputChange('password', value)}
-      />
+      <View style={styles.passwordContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          secureTextEntry={!showPassword}
+          value={formData.password}
+          onChangeText={(value) => handleInputChange('password', value)}
+        />
+        <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+          <Text style={styles.eyeButton}>{showPassword ? 'Hide' : 'Show'}</Text>
+        </TouchableOpacity>
+      </View>
 
       {!isLogin && (
         <TextInput
@@ -141,6 +147,21 @@ const styles = StyleSheet.create({
     borderColor: '#ccc',
     borderRadius: 25,
     backgroundColor: '#fff',
+  },
+  passwordContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 25,
+    backgroundColor: '#fff',
+    marginVertical: 10,
+  },
+  eyeButton: {
+    padding: 10,
+    color: '#007BFF',
+    fontWeight: 'bold',
   },
   button: {
     width: '100%',

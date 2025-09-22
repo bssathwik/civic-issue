@@ -3,7 +3,8 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const User = require('../models/User');
 const notificationService = require('../services/notificationService');
-const gamificationService = require('../services/gamificationService');
+const gamificationService = require('../services/GamificationService');
+const { validateCitizenRegistration, validateProfileUpdate } = require('../validation/citizenRegistration');
 
 // Generate JWT token
 const generateToken = (id) => {
@@ -12,65 +13,172 @@ const generateToken = (id) => {
   });
 };
 
-// Register user
 const register = async (req, res) => {
   try {
-    const { name, email, password, phone, role = 'citizen' } = req.body;
-
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    // Validate registration data
+    const validation = validateCitizenRegistration(req.body);
+    
+    if (!validation.isValid) {
       return res.status(400).json({
         success: false,
-        message: 'User already exists with this email'
+        message: 'Validation failed',
+        errors: validation.errors
       });
     }
 
-    // Create user
-    const user = await User.create({
-      name,
-      email,
-      password,
-      phone,
-      role
+    const userData = validation.data;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ 
+      $or: [
+        { email: userData.email },
+        { phone: userData.phone },
+        ...(userData.aadharNumber ? [{ 'citizenProfile.aadharNumber': userData.aadharNumber }] : [])
+      ]
     });
+
+    if (existingUser) {
+      let message = 'User already exists';
+      if (existingUser.email === userData.email) message = 'User with this email already exists';
+      else if (existingUser.phone === userData.phone) message = 'User with this phone number already exists';
+      else if (userData.aadharNumber && existingUser.citizenProfile?.aadharNumber === userData.aadharNumber) {
+        message = 'User with this Aadhar number already exists';
+      }
+      
+      return res.status(400).json({
+        success: false,
+        message
+      });
+    }
+
+    // Generate hashed password
+    const hashedPassword = await bcrypt.hash(userData.password, 12);
+    userData.password = hashedPassword;
+
+    // Create comprehensive user profile
+    const user = await User.create({
+      name: userData.name,
+      email: userData.email,
+      password: userData.password,
+      phone: userData.phone,
+      role: 'citizen',
+      
+      // Enhanced address structure
+      address: {
+        street: userData.address.street,
+        area: userData.address.area,
+        city: userData.address.city,
+        state: userData.address.state,
+        pincode: userData.address.pincode,
+        ward: userData.address.ward || '',
+        landmark: userData.address.landmark || '',
+        full: `${userData.address.street}, ${userData.address.area}, ${userData.address.city}, ${userData.address.state} - ${userData.address.pincode}`
+      },
+      
+      // Location coordinates
+      location: {
+        type: 'Point',
+        coordinates: userData.location.coordinates
+      },
+      
+      // Citizen profile
+      citizenProfile: {
+        dateOfBirth: userData.dateOfBirth,
+        gender: userData.gender,
+        occupation: userData.occupation,
+        aadharNumber: userData.aadharNumber || undefined,
+        emergencyContact: userData.emergencyContact,
+        isProfileComplete: true,
+        profileCompleteness: 100
+      },
+      
+      // Preferences
+      preferences: {
+        notifications: userData.preferences?.notifications || {
+          email: true,
+          push: true,
+          sms: false
+        },
+        language: userData.preferences?.language || 'en'
+      },
+      
+      isVerified: true // Auto-verify for now, implement email verification later
+    });
+
+    // Calculate actual profile completeness
+    const completeness = user.calculateProfileCompleteness();
+    await user.save();
 
     // Generate token
     const token = generateToken(user._id);
 
-    // Award first time registration points
+    // Award registration points
     await gamificationService.awardPoints(user._id, 'FIRST_REPORT');
 
-    // Send welcome notification
+    // Send welcome notification with personalized message
     await notificationService.sendNotification(
       user._id,
       'system_announcement',
       'Welcome to Civic Issue Platform!',
-      `Welcome ${name}! Thank you for joining our community. Start reporting civic issues to make your city better.`,
+      `Hi ${user.name}! Your account has been created successfully. You can now report civic issues and track their progress. Your profile is ${completeness}% complete.`,
       {
         actionUrl: '/dashboard'
       },
-      ['inApp']
+      ['inApp', 'email']
     );
+
+    // Prepare response data
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      address: user.address,
+      location: user.location,
+      citizenProfile: {
+        dateOfBirth: user.citizenProfile.dateOfBirth,
+        gender: user.citizenProfile.gender,
+        occupation: user.citizenProfile.occupation,
+        isProfileComplete: user.citizenProfile.isProfileComplete,
+        profileCompleteness: user.citizenProfile.profileCompleteness,
+        emergencyContact: user.citizenProfile.emergencyContact
+      },
+      gamification: user.gamification,
+      reportStats: user.reportStats,
+      preferences: user.preferences
+    };
 
     res.status(201).json({
       success: true,
-      message: 'User registered successfully',
+      message: 'Registration successful! Welcome to Civic Issue Platform.',
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        gamification: user.gamification
-      }
+      user: userResponse
     });
+
   } catch (error) {
-    console.error('Register error:', error);
+    console.error('Registration error:', error);
+    
+    // Handle specific MongoDB errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      let message = 'Duplicate value error';
+      
+      if (field === 'email') message = 'Email already exists';
+      else if (field === 'phone') message = 'Phone number already exists';
+      else if (field === 'citizenProfile.aadharNumber') message = 'Aadhar number already exists';
+      
+      return res.status(400).json({
+        success: false,
+        message,
+        field
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Registration failed',
-      error: error.message
+      message: 'Registration failed. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -130,90 +238,215 @@ const login = async (req, res) => {
   }
 };
 
-// Get current user
+// Get current user with comprehensive data
 const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get dashboard stats for citizens
+    const dashboardStats = user.role === 'citizen' ? user.getDashboardStats() : null;
+    
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      avatar: user.avatar,
+      address: user.address,
+      location: user.location,
+      gamification: user.gamification,
+      preferences: user.preferences,
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+      lastLogin: user.lastLogin
+    };
+
+    // Add citizen-specific data
+    if (user.role === 'citizen' && user.citizenProfile) {
+      userResponse.citizenProfile = {
+        dateOfBirth: user.citizenProfile.dateOfBirth,
+        gender: user.citizenProfile.gender,
+        occupation: user.citizenProfile.occupation,
+        isProfileComplete: user.citizenProfile.isProfileComplete,
+        profileCompleteness: user.citizenProfile.profileCompleteness,
+        emergencyContact: user.citizenProfile.emergencyContact
+      };
+      userResponse.reportStats = user.reportStats;
+      userResponse.dashboardStats = dashboardStats;
+    }
+
     res.json({
       success: true,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        avatar: user.avatar,
-        location: user.location,
-        address: user.address,
-        gamification: user.gamification,
-        preferences: user.preferences,
-        isVerified: user.isVerified,
-        createdAt: user.createdAt
-      }
+      user: userResponse
     });
   } catch (error) {
     console.error('Get me error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get user profile',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
-// Update profile
+// Enhanced profile update
 const updateProfile = async (req, res) => {
   try {
-    const allowedUpdates = ['name', 'phone', 'address', 'preferences'];
-    const updates = {};
+    // Validate update data
+    const validation = validateProfileUpdate(req.body);
     
-    // Filter allowed updates
-    Object.keys(req.body).forEach(key => {
-      if (allowedUpdates.includes(key)) {
-        updates[key] = req.body[key];
-      }
-    });
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: validation.errors
+      });
+    }
 
-    // Handle location update
-    if (req.body.location && req.body.location.coordinates) {
-      const [lng, lat] = req.body.location.coordinates;
-      if (lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90) {
-        updates.location = {
-          type: 'Point',
-          coordinates: [lng, lat]
-        };
+    const updateData = validation.data;
+    const userId = req.user.id;
+
+    // Get current user
+    const currentUser = await User.findById(userId);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check for duplicate phone/aadhar if being updated
+    if (updateData.phone && updateData.phone !== currentUser.phone) {
+      const existingPhone = await User.findOne({ 
+        phone: updateData.phone, 
+        _id: { $ne: userId } 
+      });
+      if (existingPhone) {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number already exists'
+        });
       }
     }
 
+    if (updateData.aadharNumber && updateData.aadharNumber !== currentUser.citizenProfile?.aadharNumber) {
+      const existingAadhar = await User.findOne({ 
+        'citizenProfile.aadharNumber': updateData.aadharNumber, 
+        _id: { $ne: userId } 
+      });
+      if (existingAadhar) {
+        return res.status(400).json({
+          success: false,
+          message: 'Aadhar number already exists'
+        });
+      }
+    }
+
+    // Prepare update object
+    const updates = {};
+    
+    // Basic fields
+    if (updateData.name) updates.name = updateData.name;
+    if (updateData.phone) updates.phone = updateData.phone;
+    
+    // Address update
+    if (updateData.address) {
+      updates.address = {
+        ...currentUser.address.toObject(),
+        ...updateData.address
+      };
+      
+      // Update full address
+      updates.address.full = `${updates.address.street}, ${updates.address.area}, ${updates.address.city}, ${updates.address.state} - ${updates.address.pincode}`;
+    }
+    
+    // Location update
+    if (updateData.location && updateData.location.coordinates) {
+      updates.location = {
+        type: 'Point',
+        coordinates: updateData.location.coordinates
+      };
+    }
+    
+    // Citizen profile updates
+    if (updateData.dateOfBirth || updateData.gender || updateData.occupation || 
+        updateData.emergencyContact || updateData.aadharNumber !== undefined) {
+      
+      updates.citizenProfile = {
+        ...currentUser.citizenProfile.toObject(),
+        ...(updateData.dateOfBirth && { dateOfBirth: updateData.dateOfBirth }),
+        ...(updateData.gender && { gender: updateData.gender }),
+        ...(updateData.occupation && { occupation: updateData.occupation }),
+        ...(updateData.emergencyContact && { emergencyContact: updateData.emergencyContact }),
+        ...(updateData.aadharNumber !== undefined && { aadharNumber: updateData.aadharNumber })
+      };
+    }
+    
+    // Preferences update
+    if (updateData.preferences) {
+      updates.preferences = {
+        ...currentUser.preferences.toObject(),
+        ...updateData.preferences
+      };
+    }
+
+    // Update user
     const user = await User.findByIdAndUpdate(
-      req.user.id,
+      userId,
       updates,
       { new: true, runValidators: true }
     );
 
+    // Recalculate profile completeness
+    const completeness = user.calculateProfileCompleteness();
+    await user.save();
+
+    // Prepare response
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      avatar: user.avatar,
+      address: user.address,
+      location: user.location,
+      citizenProfile: {
+        dateOfBirth: user.citizenProfile.dateOfBirth,
+        gender: user.citizenProfile.gender,
+        occupation: user.citizenProfile.occupation,
+        isProfileComplete: user.citizenProfile.isProfileComplete,
+        profileCompleteness: user.citizenProfile.profileCompleteness,
+        emergencyContact: user.citizenProfile.emergencyContact
+      },
+      gamification: user.gamification,
+      reportStats: user.reportStats,
+      preferences: user.preferences,
+      isVerified: user.isVerified,
+      createdAt: user.createdAt
+    };
+
     res.json({
       success: true,
       message: 'Profile updated successfully',
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        avatar: user.avatar,
-        location: user.location,
-        address: user.address,
-        gamification: user.gamification,
-        preferences: user.preferences
-      }
+      user: userResponse,
+      profileCompleteness: completeness
     });
+
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({
       success: false,
       message: 'Profile update failed',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

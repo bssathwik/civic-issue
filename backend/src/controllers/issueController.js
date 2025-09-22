@@ -3,9 +3,9 @@ const User = require('../models/User');
 const aiService = require('../services/aiService');
 const mapsService = require('../services/mapsService');
 const notificationService = require('../services/notificationService');
-const gamificationService = require('../services/gamificationService');
+const gamificationService = require('../services/GamificationService');
 
-// Create new issue
+// Create new issue with citizen tracking integration
 const createIssue = async (req, res) => {
   try {
     const {
@@ -49,8 +49,38 @@ const createIssue = async (req, res) => {
     // AI analysis
     const aiAnalysis = await aiService.analyzeIssue(title, description, images);
 
-    // Create issue
+    // Enhanced address structure
+    const addressData = typeof address === 'string' ? 
+      { full: address } : 
+      {
+        street: address.street || '',
+        area: address.area || '',
+        ward: address.ward || '',
+        city: address.city || '',
+        state: address.state || '',
+        pincode: address.pincode || '',
+        landmark: address.landmark || '',
+        full: address.full || `${address.street || ''}, ${address.area || ''}, ${address.city || ''}`.trim()
+      };
+
+    // Get ward and zone information from coordinates
+    const locationDetails = await mapsService.getLocationDetails(lat, lng);
+
+    // Generate unique issue number
+    let issueNumber;
+    let isUnique = false;
+    
+    while (!isUnique) {
+      issueNumber = Issue.generateIssueNumber();
+      const existing = await Issue.findOne({ issueNumber });
+      if (!existing) {
+        isUnique = true;
+      }
+    }
+
+    // Create issue with enhanced tracking
     const issue = await Issue.create({
+      issueNumber,
       title,
       description,
       category,
@@ -60,7 +90,15 @@ const createIssue = async (req, res) => {
         type: 'Point',
         coordinates: [lng, lat]
       },
-      address,
+      address: addressData,
+      locationDetails: {
+        wardNumber: locationDetails.ward || '',
+        zoneName: locationDetails.zone || '',
+        constituency: locationDetails.constituency || '',
+        municipalArea: locationDetails.municipalArea || '',
+        nearbyLandmarks: locationDetails.landmarks || [],
+        accessibilityInfo: req.body.accessibilityInfo || ''
+      },
       images,
       isAnonymous,
       visibility,
@@ -72,28 +110,62 @@ const createIssue = async (req, res) => {
       }
     });
 
+    // Add report to citizen's profile
+    const citizen = await User.findById(req.user.id);
+    if (citizen) {
+      citizen.addReport(issue._id, issue.issueNumber, issue.title, issue.status);
+      await citizen.save();
+    }
+
     // Populate the issue with user data
     await issue.populate('reportedBy', 'name avatar');
 
     // Award points for reporting
     await gamificationService.awardPoints(req.user.id, 'REPORT_ISSUE');
 
+    // Send initial citizen update
+    issue.addCitizenUpdate(
+      `Your issue "${title}" has been successfully reported. We will review it and assign it to the appropriate department.`,
+      null,
+      'status_change'
+    );
+    
+    await issue.save();
+
     // Send notifications to nearby field workers (if not spam)
     if (!aiAnalysis.isSpam) {
       await notifyNearbyFieldWorkers(issue);
     }
 
+    // Send confirmation notification to citizen
+    await notificationService.sendNotification(
+      req.user.id,
+      'issue_created',
+      'Issue Reported Successfully',
+      `Your issue "${title}" has been reported with Issue ID: ${issue.issueNumber}. You can track its progress in your dashboard.`,
+      {
+        issueId: issue._id,
+        issueNumber: issue.issueNumber,
+        actionUrl: `/issues/${issue._id}`
+      },
+      ['inApp', 'push']
+    );
+
     res.status(201).json({
       success: true,
       message: 'Issue reported successfully',
-      issue: formatIssueResponse(issue, req.user.id)
+      data: {
+        ...formatIssueResponse(issue, req.user.id),
+        issueNumber: issue.issueNumber,
+        citizenSummary: issue.getCitizenSummary()
+      }
     });
   } catch (error) {
     console.error('Create issue error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to create issue',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -233,6 +305,70 @@ const getIssue = async (req, res) => {
   }
 };
 
+// Get user's reported issues
+const getMyIssues = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      status,
+      category,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    // Build filter for user's issues
+    const filter = { reportedBy: req.user.id };
+    
+    if (status) filter.status = status;
+    if (category) filter.category = category;
+
+    // Build sort object
+    const sort = {};
+    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    // Execute query with pagination
+    const skip = (page - 1) * limit;
+    const issues = await Issue.find(filter)
+      .populate('reportedBy', 'name avatar')
+      .populate('assignedTo', 'name avatar')
+      .sort(sort)
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    // Get total count for pagination
+    const total = await Issue.countDocuments(filter);
+
+    // Format response with issue tracking information
+    const formattedIssues = issues.map(issue => ({
+      ...formatIssueResponse(issue, req.user.id),
+      issueNumber: issue.issueNumber,
+      tracking: issue.tracking,
+      citizenSummary: issue.getCitizenSummary?.() || null
+    }));
+
+    res.json({
+      success: true,
+      data: formattedIssues,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrev: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('Get my issues error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch your issues',
+      error: error.message
+    });
+  }
+};
+
 // Update issue
 const updateIssue = async (req, res) => {
   try {
@@ -264,6 +400,23 @@ const updateIssue = async (req, res) => {
     if (updates.status && updates.status !== issue.status) {
       const oldStatus = issue.status;
       issue.updateStatus(updates.status);
+      
+      // Update citizen's report tracking if status changed
+      try {
+        const citizen = await User.findById(issue.reportedBy);
+        if (citizen) {
+          await citizen.updateReportStatus(issue._id, updates.status);
+          
+          // Add citizen update to issue
+          await issue.addCitizenUpdate(
+            `Issue status updated from "${oldStatus}" to "${updates.status}"`,
+            req.user.role === 'admin' ? 'Admin' : 'Field Worker'
+          );
+        }
+      } catch (citizenUpdateError) {
+        console.error('Error updating citizen report status:', citizenUpdateError);
+        // Continue with the operation even if citizen update fails
+      }
       
       // Send notifications
       await notificationService.notifyIssueStatusUpdate(
@@ -529,6 +682,7 @@ const getIssueStats = async (req, res) => {
 const formatIssueResponse = (issue, userId) => {
   const formatted = {
     id: issue._id,
+    _id: issue._id, // For mobile app compatibility
     title: issue.title,
     description: issue.description,
     category: issue.category,
@@ -540,7 +694,10 @@ const formatIssueResponse = (issue, userId) => {
     reportedBy: issue.isAnonymous ? null : issue.reportedBy,
     assignedTo: issue.assignedTo,
     upvotes: issue.upvoteCount,
+    upvoteCount: issue.upvoteCount, // Mobile app compatibility
+    votesCount: issue.upvoteCount, // Alternative naming
     downvotes: issue.downvoteCount,
+    downvoteCount: issue.downvoteCount, // Mobile app compatibility
     netVotes: issue.netVotes,
     comments: issue.comments || [],
     resolution: issue.resolution,
@@ -548,7 +705,12 @@ const formatIssueResponse = (issue, userId) => {
     isAnonymous: issue.isAnonymous,
     visibility: issue.visibility,
     createdAt: issue.createdAt,
-    updatedAt: issue.updatedAt
+    created_at: issue.createdAt, // Alternative naming
+    updatedAt: issue.updatedAt,
+    updated_at: issue.updatedAt, // Alternative naming
+    // Additional mobile-friendly fields
+    acknowledgedAt: issue.tracking?.reviewedAt || issue.tracking?.assignedAt,
+    assignedDepartment: issue.assignedTo?.department || 'Public Works Department'
   };
 
   // Add user-specific vote status if authenticated
@@ -606,13 +768,112 @@ const notifyNearbyFieldWorkers = async (issue) => {
   }
 };
 
+// Upvote issue (separate endpoint for mobile app)
+const upvoteIssue = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const issue = await Issue.findById(id).populate('reportedBy', 'name');
+    if (!issue) {
+      return res.status(404).json({
+        success: false,
+        message: 'Issue not found'
+      });
+    }
+
+    // Cannot vote on own issue
+    if (issue.reportedBy._id.toString() === req.user.id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot vote on your own issue'
+      });
+    }
+
+    issue.toggleUpvote(req.user.id);
+    
+    // Send notification if upvoted
+    if (issue.hasUpvoted(req.user.id)) {
+      await notificationService.notifyUpvote(issue._id, req.user.id);
+    }
+
+    await issue.save();
+
+    res.json({
+      success: true,
+      message: 'Issue upvoted successfully',
+      data: {
+        upvotes: issue.upvoteCount,
+        downvotes: issue.downvoteCount,
+        netVotes: issue.netVotes,
+        userVote: issue.hasUpvoted(req.user.id) ? 'upvote' : 
+                 issue.hasDownvoted(req.user.id) ? 'downvote' : null
+      }
+    });
+  } catch (error) {
+    console.error('Upvote issue error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upvote issue',
+      error: error.message
+    });
+  }
+};
+
+// Downvote issue (separate endpoint for mobile app)
+const downvoteIssue = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const issue = await Issue.findById(id).populate('reportedBy', 'name');
+    if (!issue) {
+      return res.status(404).json({
+        success: false,
+        message: 'Issue not found'
+      });
+    }
+
+    // Cannot vote on own issue
+    if (issue.reportedBy._id.toString() === req.user.id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot vote on your own issue'
+      });
+    }
+
+    issue.toggleDownvote(req.user.id);
+    await issue.save();
+
+    res.json({
+      success: true,
+      message: 'Issue downvoted successfully',
+      data: {
+        upvotes: issue.upvoteCount,
+        downvotes: issue.downvoteCount,
+        netVotes: issue.netVotes,
+        userVote: issue.hasUpvoted(req.user.id) ? 'upvote' : 
+                 issue.hasDownvoted(req.user.id) ? 'downvote' : null
+      }
+    });
+  } catch (error) {
+    console.error('Downvote issue error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to downvote issue',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createIssue,
   getIssues,
+  getMyIssues,
   getIssue,
   updateIssue,
   deleteIssue,
   voteIssue,
+  upvoteIssue,
+  downvoteIssue,
   addComment,
   getIssueStats
 };

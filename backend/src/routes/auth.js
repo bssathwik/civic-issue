@@ -20,7 +20,7 @@ const {
 const router = express.Router();
 
 // Public routes
-router.post('/register', validateRegister, register);
+router.post('/register', register);
 router.post('/login', validateLogin, login);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);

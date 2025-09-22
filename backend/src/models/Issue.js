@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 
 const issueSchema = new mongoose.Schema({
+  // Unique issue number for citizen reference
+  issueNumber: {
+    type: String,
+    unique: true,
+    required: true
+  },
   title: {
     type: String,
     required: [true, 'Issue title is required'],
@@ -29,6 +35,9 @@ const issueSchema = new mongoose.Schema({
       'safety_security',
       'noise_pollution',
       'air_pollution',
+      'electricity',
+      'sewerage',
+      'construction',
       'other'
     ]
   },
@@ -72,8 +81,26 @@ const issueSchema = new mongoose.Schema({
     }
   },
   address: {
-    type: String,
-    required: [true, 'Address is required']
+    street: String,
+    area: String,
+    ward: String,
+    city: String,
+    state: String,
+    pincode: String,
+    landmark: String,
+    full: {
+      type: String,
+      required: [true, 'Address is required']
+    }
+  },
+  // Enhanced location tracking for better citizen access
+  locationDetails: {
+    wardNumber: String,
+    zoneName: String,
+    constituency: String,
+    municipalArea: String,
+    nearbyLandmarks: [String],
+    accessibilityInfo: String
   },
   images: [{
     url: String,
@@ -140,6 +167,58 @@ const issueSchema = new mongoose.Schema({
     sentimentScore: Number,
     tags: [String]
   },
+  // Citizen communication and updates
+  citizenUpdates: [{
+    message: String,
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    updateType: {
+      type: String,
+      enum: ['status_change', 'assignment', 'progress_update', 'completion', 'comment'],
+      default: 'comment'
+    },
+    isVisibleToCitizen: {
+      type: Boolean,
+      default: true
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
+    },
+    images: [{
+      url: String,
+      publicId: String
+    }]
+  }],
+  
+  // Expected completion date for citizen transparency
+  expectedCompletion: {
+    date: Date,
+    estimatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reason: String
+  },
+  
+  // Citizen satisfaction tracking
+  citizenFeedback: {
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5
+    },
+    comment: String,
+    submittedAt: Date,
+    isAnonymous: {
+      type: Boolean,
+      default: false
+    }
+  },
+  
+  // Resolution details
   resolution: {
     description: String,
     resolvedBy: {
@@ -151,7 +230,17 @@ const issueSchema = new mongoose.Schema({
       url: String,
       publicId: String
     }],
-    timeTaken: Number // in hours
+    timeTaken: Number, // in hours
+    cost: Number,
+    materialsUsed: [String],
+    workersInvolved: [{
+      worker: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      role: String,
+      hoursWorked: Number
+    }]
   },
   tracking: {
     reportedAt: {
@@ -212,6 +301,20 @@ issueSchema.virtual('netVotes').get(function() {
   return this.upvotes.length - this.downvotes.length;
 });
 
+// Virtual for vote count (mobile app compatibility)
+issueSchema.virtual('votesCount').get(function() {
+  return this.upvotes.length;
+});
+
+// Virtual for comment count
+issueSchema.virtual('commentCount').get(function() {
+  return this.comments.length;
+});
+
+// Make sure virtuals are included in JSON output
+issueSchema.set('toJSON', { virtuals: true });
+issueSchema.set('toObject', { virtuals: true });
+
 // Method to check if user has upvoted
 issueSchema.methods.hasUpvoted = function(userId) {
   return this.upvotes.some(vote => vote.user.toString() === userId.toString());
@@ -252,11 +355,13 @@ issueSchema.methods.toggleDownvote = function(userId) {
   }
 };
 
-// Method to update tracking timestamps
-issueSchema.methods.updateStatus = function(newStatus) {
+// Method to update status with citizen notification
+issueSchema.methods.updateStatus = function(newStatus, updatedBy, message) {
+  const oldStatus = this.status;
   this.status = newStatus;
   const now = new Date();
   
+  // Update tracking timestamps
   switch (newStatus) {
     case 'in_review':
       this.tracking.reviewedAt = now;
@@ -279,6 +384,92 @@ issueSchema.methods.updateStatus = function(newStatus) {
       this.tracking.closedAt = now;
       break;
   }
+  
+  // Add citizen update
+  if (message) {
+    this.addCitizenUpdate(message, updatedBy, 'status_change');
+  }
+  
+  return { oldStatus, newStatus };
 };
+
+// Method to add citizen update
+issueSchema.methods.addCitizenUpdate = function(message, updatedBy, updateType = 'comment', images = []) {
+  this.citizenUpdates.unshift({
+    message,
+    updatedBy,
+    updateType,
+    timestamp: new Date(),
+    images: images || [],
+    isVisibleToCitizen: true
+  });
+  
+  // Keep only last 20 updates
+  if (this.citizenUpdates.length > 20) {
+    this.citizenUpdates = this.citizenUpdates.slice(0, 20);
+  }
+};
+
+// Method to get citizen-friendly status
+issueSchema.methods.getCitizenFriendlyStatus = function() {
+  const statusMap = {
+    'reported': 'Issue Reported - Under Review',
+    'in_review': 'Under Review by Authorities',
+    'assigned': 'Assigned to Field Worker',
+    'in_progress': 'Work in Progress',
+    'resolved': 'Issue Resolved',
+    'closed': 'Issue Closed',
+    'rejected': 'Issue Rejected'
+  };
+  
+  return statusMap[this.status] || this.status;
+};
+
+// Method to generate unique issue number
+issueSchema.statics.generateIssueNumber = function() {
+  const now = new Date();
+  const year = now.getFullYear().toString().substr(-2);
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const random = Math.random().toString(36).substr(2, 4).toUpperCase();
+  
+  return `ISS${year}${month}${random}`;
+};
+
+// Method to get citizen dashboard data
+issueSchema.methods.getCitizenSummary = function() {
+  return {
+    issueNumber: this.issueNumber,
+    title: this.title,
+    category: this.category,
+    status: this.status,
+    statusDisplay: this.getCitizenFriendlyStatus(),
+    priority: this.priority,
+    reportedAt: this.tracking.reportedAt,
+    lastUpdate: this.citizenUpdates.length > 0 ? this.citizenUpdates[0].timestamp : this.updatedAt,
+    upvoteCount: this.upvotes.length,
+    location: this.address.full,
+    expectedCompletion: this.expectedCompletion.date,
+    canProvideFeedback: this.status === 'resolved' && !this.citizenFeedback.rating
+  };
+};
+
+// Pre-save middleware to generate issue number
+issueSchema.pre('save', async function(next) {
+  if (this.isNew && !this.issueNumber) {
+    let issueNumber;
+    let isUnique = false;
+    
+    while (!isUnique) {
+      issueNumber = this.constructor.generateIssueNumber();
+      const existing = await this.constructor.findOne({ issueNumber });
+      if (!existing) {
+        isUnique = true;
+      }
+    }
+    
+    this.issueNumber = issueNumber;
+  }
+  next();
+});
 
 module.exports = mongoose.model('Issue', issueSchema);

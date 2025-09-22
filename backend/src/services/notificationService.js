@@ -267,7 +267,7 @@ class NotificationService {
 
       // If issue is resolved, send gamification notification
       if (newStatus === 'resolved') {
-        const gamificationService = require('./gamificationService');
+        const gamificationService = require('./GamificationService');
         await gamificationService.awardPoints(issue.reportedBy._id, 'ISSUE_RESOLVED');
       }
     } catch (error) {
@@ -300,7 +300,7 @@ class NotificationService {
       );
 
       // Award points for upvote received
-      const gamificationService = require('./gamificationService');
+      const gamificationService = require('./GamificationService');
       await gamificationService.awardPoints(issue.reportedBy._id, 'UPVOTE_RECEIVED');
     } catch (error) {
       console.error('Upvote notification error:', error);
@@ -422,6 +422,203 @@ class NotificationService {
       await Notification.markAllAsRead(userId);
     } catch (error) {
       console.error('Mark all as read error:', error);
+      throw error;
+    }
+  }
+
+  // Gamification-specific notification methods
+  async sendBadgeEarnedNotification(userId, badge, pointsAwarded) {
+    try {
+      const title = `🏆 Badge Earned: ${badge.displayName || badge.name}`;
+      const message = `Congratulations! You've earned the "${badge.displayName || badge.name}" badge and received ${pointsAwarded} points. ${badge.description}`;
+      
+      return await this.sendNotification(
+        userId,
+        'achievement_earned',
+        title,
+        message,
+        {
+          badgeId: badge._id,
+          badgeName: badge.name,
+          badgeDisplayName: badge.displayName,
+          badgeIcon: badge.icon,
+          badgeRarity: badge.rarity,
+          pointsAwarded,
+          actionUrl: '/achievements',
+          priority: badge.rarity === 'legendary' ? 'high' : 'medium',
+          metadata: {
+            achievementType: 'badge',
+            category: badge.category,
+            rarity: badge.rarity
+          }
+        },
+        ['inApp', 'push']
+      );
+    } catch (error) {
+      console.error('Error sending badge notification:', error);
+      throw error;
+    }
+  }
+
+  async sendCertificateEarnedNotification(userId, certificate, pointsAwarded) {
+    try {
+      const title = `🏅 Certificate Earned: ${certificate.displayName || certificate.name}`;
+      const message = `Outstanding achievement! You've earned the "${certificate.displayName || certificate.name}" certificate and received ${pointsAwarded} points. ${certificate.description}`;
+      
+      return await this.sendNotification(
+        userId,
+        'achievement_earned',
+        title,
+        message,
+        {
+          certificateId: certificate._id,
+          certificateName: certificate.name,
+          certificateDisplayName: certificate.displayName,
+          certificateLevel: certificate.level,
+          pointsAwarded,
+          actionUrl: '/certificates',
+          priority: 'high',
+          metadata: {
+            achievementType: 'certificate',
+            level: certificate.level,
+            category: certificate.category
+          }
+        },
+        ['inApp', 'push', 'email']
+      );
+    } catch (error) {
+      console.error('Error sending certificate notification:', error);
+      throw error;
+    }
+  }
+
+  async sendLevelUpNotification(userId, oldLevel, newLevel, totalPoints) {
+    try {
+      const title = `🌟 Level Up: Welcome to ${newLevel}!`;
+      const message = `Amazing progress! You've advanced from ${oldLevel} to ${newLevel} level with ${totalPoints} total points. Keep up the great civic engagement!`;
+      
+      return await this.sendNotification(
+        userId,
+        'level_up',
+        title,
+        message,
+        {
+          oldLevel,
+          newLevel,
+          totalPoints,
+          actionUrl: '/profile',
+          priority: 'high',
+          metadata: {
+            achievementType: 'level_up',
+            previousLevel: oldLevel,
+            currentLevel: newLevel
+          }
+        },
+        ['inApp', 'push']
+      );
+    } catch (error) {
+      console.error('Error sending level up notification:', error);
+      throw error;
+    }
+  }
+
+  async sendPointsAwardedNotification(userId, action, pointsAwarded, totalPoints, context = {}) {
+    try {
+      const actionMessages = {
+        'REPORT_ISSUE': `📝 +${pointsAwarded} points for reporting an issue`,
+        'ISSUE_VERIFIED': `✅ +${pointsAwarded} points for issue verification`,
+        'VOTE_ISSUE': `👍 +${pointsAwarded} points for voting on an issue`,
+        'COMMENT_ISSUE': `💬 +${pointsAwarded} points for commenting on an issue`,
+        'SHARE_ISSUE': `📤 +${pointsAwarded} points for sharing an issue`,
+        'ISSUE_RESOLVED': `🎯 +${pointsAwarded} points for issue resolution`,
+        'DAILY_LOGIN': `📅 +${pointsAwarded} points for daily engagement`,
+        'STREAK_BONUS': `🔥 +${pointsAwarded} streak bonus points`
+      };
+
+      const title = `Points Earned!`;
+      const message = actionMessages[action] || `+${pointsAwarded} points earned! Total: ${totalPoints} points`;
+      
+      return await this.sendNotification(
+        userId,
+        'achievement_earned',
+        title,
+        message,
+        {
+          action,
+          pointsAwarded,
+          totalPoints,
+          actionUrl: '/achievements',
+          priority: 'low',
+          metadata: {
+            achievementType: 'points',
+            action,
+            context
+          }
+        },
+        ['inApp'] // Only in-app for regular points to avoid spam
+      );
+    } catch (error) {
+      console.error('Error sending points notification:', error);
+      throw error;
+    }
+  }
+
+  async sendStreakMilestoneNotification(userId, streakDays, bonusPoints) {
+    try {
+      const title = `🔥 ${streakDays}-Day Streak Achievement!`;
+      const message = `Incredible consistency! You've maintained a ${streakDays}-day activity streak and earned ${bonusPoints} bonus points. Keep the momentum going!`;
+      
+      return await this.sendNotification(
+        userId,
+        'achievement_earned',
+        title,
+        message,
+        {
+          streakDays,
+          bonusPoints,
+          actionUrl: '/achievements',
+          priority: 'medium',
+          metadata: {
+            achievementType: 'streak',
+            streakLength: streakDays
+          }
+        },
+        ['inApp', 'push']
+      );
+    } catch (error) {
+      console.error('Error sending streak milestone notification:', error);
+      throw error;
+    }
+  }
+
+  async sendLeaderboardRankNotification(userId, newRank, previousRank, timeFrame = 'weekly') {
+    try {
+      if (newRank <= 10 && (previousRank > 10 || !previousRank)) {
+        const title = `🏆 Top 10 Achiever!`;
+        const message = `Excellent work! You're now ranked #${newRank} on the ${timeFrame} leaderboard. Your civic engagement is making a real difference!`;
+        
+        return await this.sendNotification(
+          userId,
+          'achievement_earned',
+          title,
+          message,
+          {
+            newRank,
+            previousRank,
+            timeFrame,
+            actionUrl: '/leaderboard',
+            priority: 'medium',
+            metadata: {
+              achievementType: 'leaderboard',
+              ranking: newRank,
+              timeFrame
+            }
+          },
+          ['inApp', 'push']
+        );
+      }
+    } catch (error) {
+      console.error('Error sending leaderboard notification:', error);
       throw error;
     }
   }

@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
+    "start": "nodemon src/app.js",
     "dev": "nodemon src/app.js",
-    "test": "jest"
+    "test": "jest",
+    "create-admin": "node create-admin.js",
+    "create-admin-interactive": "node create-admin-interactive.js",
+    "create-default-admin": "node create-default-admin.js",
+    "init-gamification": "node initialize-gamification.js"
   },
   "keywords": [
     "civic",
@@ -26,6 +30,7 @@
     "express-rate-limit": "^8.1.0",
     "express-validator": "^7.2.1",
     "helmet": "^8.1.0",
+    "joi": "^18.0.1",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.18.1",
     "morgan": "^1.10.1",
@@ -33,6 +38,7 @@
     "nodemailer": "^7.0.6",
     "sharp": "^0.34.3",
     "socket.io": "^4.8.1",
+    "twilio": "^5.10.0",
     "validator": "^13.15.15"
   },
   "devDependencies": {
